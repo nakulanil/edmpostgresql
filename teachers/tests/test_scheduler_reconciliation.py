@@ -69,10 +69,11 @@ class ExcelDeadlineReconciliationTest(TestCase):
 
     def test_deleted_exam_date_removes_job(self):
         self.sync()
+        job_id = self.job_id  # Django clears the model's pk after deletion.
         self.exam.delete()
         self.sync()
-        self.assertNotIn(self.job_id, self.jobs)
-        self.scheduler.remove_job.assert_called_once_with(self.job_id)
+        self.assertNotIn(job_id, self.jobs)
+        self.scheduler.remove_job.assert_called_once_with(job_id)
 
     def test_inactive_session_removes_job(self):
         self.sync()
