@@ -133,6 +133,7 @@ class Command(BaseCommand):
             if scheduler_instance.running:
                 scheduler_instance.shutdown(wait=False)
             logger.info("Scheduler stopped.")
+
     def _process_overdue(self):
         """Reconcile overdue exam dates synchronously and idempotently."""
         for session_id, exam_date_ids in find_sessions_needing_assignment().items():
