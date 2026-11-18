@@ -110,3 +110,25 @@ class ConcurrentBookingTest(TransactionTestCase):
             )
             remaining += teacher.final_duties
         self.assertEqual(remaining, 5)
+
+    def test_sixteen_teachers_compete_for_five_positions(self):
+        """Burst of parallel requests preserves exact slot capacity."""
+        participants = [self.make_teacher(i, duties=1) for i in range(100, 116)]
+        slot = Slot.objects.create(
+            exam_date=self.exam, shift="Morning", total_positions=5,
+        )
+        statuses = self.book_in_parallel(
+            [(user, slot.pk) for user, _teacher in participants]
+        )
+        self.assertEqual(statuses, [302] * 16)
+        slot.refresh_from_db()
+        self.assertEqual(slot.filled_positions, 5)
+        booked_teacher_ids = list(
+            Booking.objects.filter(slot=slot).values_list("teacher_id", flat=True)
+        )
+        self.assertEqual(len(booked_teacher_ids), 5)
+        self.assertEqual(len(set(booked_teacher_ids)), 5)
+        for _user, teacher in participants:
+            teacher.refresh_from_db()
+            booked = int(teacher.teacher_id in booked_teacher_ids)
+            self.assertEqual(teacher.final_duties, 1 - booked)
