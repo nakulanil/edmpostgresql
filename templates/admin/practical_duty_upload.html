@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% block title %}Upload Practical Exam Duties{% endblock %}
+
+{% block content %}
+<h1>Upload Practical Exam Duties</h1>
+
+<p>Upload an Excel file (.xlsx) with practical exam duty hours per teacher:</p>
+
+<table style="background:#f4f4f4; padding:10px; border-radius:4px; border-collapse:collapse; font-size:13px;">
+    <tr style="background:#e9ecef;"><th style="padding:4px 10px; border:1px solid #ddd;">full_name <small>(or teacher_name)</small></th><th style="padding:4px 10px; border:1px solid #ddd;">faculty_id</th><th style="padding:4px 10px; border:1px solid #ddd;">duty_hours</th><th style="padding:4px 10px; border:1px solid #ddd;">session</th></tr>
+    <tr><td style="padding:4px 10px; border:1px solid #ddd;">John Smith</td><td style="padding:4px 10px; border:1px solid #ddd;">F001</td><td style="padding:4px 10px; border:1px solid #ddd;">6</td><td style="padding:4px 10px; border:1px solid #ddd; color:#888;">(optional)</td></tr>
+    <tr><td style="padding:4px 10px; border:1px solid #ddd;">Jane Doe</td><td style="padding:4px 10px; border:1px solid #ddd;">F002</td><td style="padding:4px 10px; border:1px solid #ddd;">3</td><td style="padding:4px 10px; border:1px solid #ddd; color:#888;"></td></tr>
+</table>
+
+<p style="color:#888; font-size:13px;">
+    ℹ️ <code>full_name</code> (or <code>teacher_name</code>) and <code>faculty_id</code> are required.<br>
+    ℹ️ <code>duty_hours</code> defaults to 0 if blank.<br>
+    ℹ️ Relaxed duties are calculated as <strong>floor(duty_hours / 3)</strong>.<br>
+    ℹ️ If no <code>session</code> column is provided, the active session is used.
+</p>
+
+<form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div style="margin-bottom:15px;">
+        <label><strong>Excel File (.xlsx):</strong></label><br>
+        <input type="file" name="xlsx_file" accept=".xlsx,.xls" required style="margin-top:5px;">
+    </div>
+    <input type="submit" value="📤 Upload Practical Duties" class="default" style="padding:10px 20px; font-size:15px;">
+</form>
+{% endblock %}

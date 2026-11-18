@@ -1,0 +1,161 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duty Reports — Exam Duty System</title>
+    {% include 'includes/head_common.html' %}
+</head>
+<body>
+
+<nav class="app-navbar">
+    {% include 'includes/navbar_brand.html' %}
+    <div class="nav-actions">
+        {% include 'includes/theme_toggle.html' %}
+        <a href="/admin/" class="nav-back-link">← Back to Admin</a>
+    </div>
+</nav>
+
+<div class="main">
+
+    <div class="page-title">📊 Duty Reports</div>
+    <div class="page-sub">Select any session to download its PDF reports.</div>
+
+    {% if all_sessions %}
+
+        <!-- Session Selector -->
+        <div class="session-selector">
+            <label>📂 Session:</label>
+            <select id="session-select" onchange="switchSession(this)">
+                {% for s in all_sessions %}
+                <option value="{{ s.pk }}"
+                    {% if selected and s.pk == selected.pk %}selected{% endif %}>
+                    {{ s.name }}
+                    {% if s.status == 'active' %}(Active)
+                    {% elif s.status == 'completed' %}(Completed)
+                    {% else %}(Upcoming){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+
+            {% if selected %}
+                <span class="status-badge badge-{{ selected.status }}">
+                    {% if selected.status == 'active' %}● Active
+                    {% elif selected.status == 'completed' %}✓ Completed
+                    {% else %}○ Upcoming{% endif %}
+                </span>
+            {% endif %}
+        </div>
+
+        {% if selected %}
+
+            <!-- Stats -->
+            <div class="reports-stats">
+                <div class="stat-card">
+                    <div class="num">{{ stats.total_dates }}</div>
+                    <div class="lbl">Exam Dates</div>
+                </div>
+                <div class="stat-card">
+                    <div class="num">{{ stats.total_teachers }}</div>
+                    <div class="lbl">Teachers Assigned</div>
+                </div>
+                <div class="stat-card">
+                    <div class="num">{{ stats.total_bookings }}</div>
+                    <div class="lbl">Duties Filled</div>
+                </div>
+                <div class="stat-card {% if stats.unfilled > 0 %}warn{% endif %}">
+                    <div class="num">{{ stats.unfilled }}</div>
+                    <div class="lbl">Unfilled Positions</div>
+                </div>
+            </div>
+
+            <!-- Report Cards -->
+            <div class="reports-grid">
+
+                <div class="report-card">
+                    <div class="report-icon">📅</div>
+                    <div>
+                        <h3>Report 1 — By Date</h3>
+                        <p>One page per exam date, all assigned teachers listed per shift.</p>
+                        <ul>
+                            <li>Faculty ID, Name, Department, Phone</li>
+                            <li>Shift with start/end timings</li>
+                            <li>Self-booked vs Auto-assigned</li>
+                            <li>Filled / total positions summary per date</li>
+                        </ul>
+                    </div>
+                    <a href="{% url 'report_by_date' %}?session_id={{ selected.pk }}"
+                       class="btn-download">
+                        📥 Download PDF
+                    </a>
+                </div>
+
+                <div class="report-card">
+                    <div class="report-icon">👨‍🏫</div>
+                    <div>
+                        <h3>Report 2 — By Teacher</h3>
+                        <p>One page per teacher listing all their assigned duties.</p>
+                        <ul>
+                            <li>Date, Exam name(s), Shift & timings</li>
+                            <li>Self-booked vs Auto-assigned per row</li>
+                            <li>Summary: total, morning, evening, auto counts</li>
+                        </ul>
+                    </div>
+                    <a href="{% url 'report_by_teacher' %}?session_id={{ selected.pk }}"
+                       class="btn-download">
+                        📥 Download PDF
+                    </a>
+                </div>
+
+            </div>
+
+            <div class="note-box">
+                <strong>ℹ️ Notes</strong>
+                Showing data for <b>{{ selected.name }}</b> ({{ selected.get_status_display }}).
+                For the most complete Report 2, run it after the booking deadline has passed
+                and auto-assignment has finished — that way every teacher's duties are captured.
+                PDFs open as downloads.
+            </div>
+
+        {% endif %}
+
+    {% else %}
+        <div class="no-sessions-msg">
+            ⚠️ <strong>No sessions found.</strong>
+            Create and set up a session from the admin panel first.
+        </div>
+
+        <div class="reports-grid">
+            <div class="report-card report-card-disabled">
+                <div class="report-icon">📅</div>
+                <div><h3>Report 1 — By Date</h3><p>No sessions available.</p></div>
+                <span class="btn-download disabled">📥 Download PDF</span>
+            </div>
+            <div class="report-card report-card-disabled">
+                <div class="report-icon">👨‍🏫</div>
+                <div><h3>Report 2 — By Teacher</h3><p>No sessions available.</p></div>
+                <span class="btn-download disabled">📥 Download PDF</span>
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+
+<script>
+function toggleTheme() {
+  var html = document.documentElement;
+  var current = html.getAttribute('data-theme');
+  var next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('edm-theme', next);
+}
+
+function switchSession(sel) {
+    const id = sel.value;
+    window.location.href = "{% url 'reports_landing' %}?session_id=" + id;
+}
+</script>
+
+</body>
+</html>

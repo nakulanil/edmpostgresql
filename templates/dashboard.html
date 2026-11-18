@@ -1,0 +1,563 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+{# Store URL patterns for use in JavaScript #}
+{% url 'book_slot' 999999 as book_slot_url_template %}
+{% url 'cancel_booking' 999999 as cancel_booking_url_template %}
+
+<!-- Top Navbar -->
+<div class="app-navbar">
+    {% include 'includes/navbar_brand.html' %}
+    <div class="nav-actions">
+
+        {% include 'includes/theme_toggle.html' %}
+
+        <!-- Bell Notification Button -->
+        <div class="bell-wrapper">
+            <button class="bell-btn" id="bell-btn" onclick="toggleNotifDropdown(event)" title="Notifications">
+                🔔
+                <span class="bell-badge {% if notifications %}visible{% endif %}" id="bell-badge">
+                    {{ notifications|length }}
+                </span>
+            </button>
+
+            <!-- Dropdown Panel -->
+            <div class="notif-dropdown" id="notif-dropdown">
+                <div class="notif-dropdown-header">
+                    <span class="title">🔔 Notifications</span>
+                    <button class="mark-all-btn" onclick="markAllRead()">Mark all read</button>
+                </div>
+                <div class="notif-list" id="notif-list">
+                    {% if notifications %}
+                        {% for notif in notifications %}
+                        <div class="notif-item" data-notif-id="{{ notif.id }}">
+                            <div class="notif-icon icon-{{ notif.activity }}">
+                                {% if notif.activity == 'booked' %}✅
+                                {% elif notif.activity == 'cancelled' %}❌
+                                {% elif notif.activity == 'auto_assigned' %}🤖
+                                {% endif %}
+                            </div>
+                            <div class="notif-body">
+                                <div class="notif-title">
+                                    {% if notif.activity == 'booked' %}Slot Booked
+                                    {% elif notif.activity == 'cancelled' %}Slot Cancelled
+                                    {% elif notif.activity == 'auto_assigned' %}Auto Assigned
+                                    {% endif %}
+                                </div>
+                                <div class="notif-msg" title="{{ notif.message }}">{{ notif.message }}</div>
+                                <div class="notif-time">{{ notif.created_at }}</div>
+                            </div>
+                            <div class="unread-dot"></div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="notif-empty" id="notif-empty">
+                            <div class="notif-empty-icon">🔕</div>
+                            <div>No new notifications</div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <!-- end bell -->
+
+        <a href="{% url 'change_password' %}" class="nav-btn nav-btn-outline">🔐 Change Password</a>
+        <form method="POST" action="{% url 'logout' %}" style="margin:0; display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="nav-btn nav-btn-danger">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="main-content">
+
+    <!-- Welcome -->
+    <div class="welcome-bar">
+        <h2>👋 Welcome, {{ teacher.full_name }}</h2>
+        {% if teacher.role == 'deputy_superintendent' %}
+            <span class="role-badge role-deputy">⭐ Deputy Superintendent</span>
+        {% elif teacher.role == 'adhoc' %}
+            <span class="role-badge role-adhoc">📌 Adhoc</span>
+        {% elif teacher.role == 'guest' %}
+            <span class="role-badge role-guest">🎭 Guest Teacher</span>
+        {% else %}
+            <span class="role-badge role-perm">📌 Permanent</span>
+        {% endif %}
+        <p>Here's your exam duty overview for the current session.</p>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert-msg {% if message.tags == 'error' %}alert-error{% else %}alert-success{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if active_session and active_session.status == 'active' %}
+
+    <!-- Stats -->
+    <div class="stats-row">
+        {% if active_session.semester_type == 'even' and active_session.vacation_start_date %}
+        <div class="stat-box">
+            <div class="stat-icon stat-icon-blue">📋</div>
+            <div class="stat-text">
+                <div class="stat-number" id="duties-count">{{ teacher.final_duties }}</div>
+                <div class="stat-label">Before-Vacation Duties</div>
+            </div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-icon stat-icon-orange">🏖️</div>
+            <div class="stat-text">
+                <div class="stat-number" id="after-vac-duties-count">{{ teacher.after_vacation_duties }}</div>
+                <div class="stat-label">After-Vacation Duties</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="stat-box">
+            <div class="stat-icon stat-icon-blue">📋</div>
+            <div class="stat-text">
+                <div class="stat-number" id="duties-count">{{ teacher.final_duties }}</div>
+                <div class="stat-label">Final Duties Remaining</div>
+            </div>
+        </div>
+        {% endif %}
+        <div class="stat-box">
+            <div class="stat-icon stat-icon-purple">🧘</div>
+            <div class="stat-text">
+                <div class="stat-number">{{ teacher.relaxed_duties }}</div>
+                <div class="stat-label">Relaxed Duties</div>
+            </div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-icon stat-icon-green">🎓</div>
+            <div class="stat-text">
+                <div class="stat-number">{{ active_session.name }}</div>
+                <div class="stat-label">Active Session</div>
+            </div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-icon stat-icon-orange">📌</div>
+            <div class="stat-text">
+                <div class="stat-number" id="bookings-count">{{ my_bookings|length }}</div>
+                <div class="stat-label">My Bookings</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deadline Banner -->
+    {% if slots %}
+    <div class="deadline-banner">
+        ⏳ <strong>Booking Deadline:</strong>
+        &nbsp;{{ slots.0.exam_date.booking_deadline }}
+        &nbsp;|&nbsp;
+        Closes in: <strong><span id="global-countdown" class="countdown-primary"></span></strong>
+    </div>
+    {% endif %}
+
+    <!-- Main Layout -->
+    <div class="dashboard-wrapper">
+
+        <!-- Left: Available Slots -->
+        <div class="dashboard-left">
+
+            {% if is_even_sem %}
+            <!-- Before-Vacation Slots -->
+            <div class="card">
+                <div class="card-header">📋 Before-Vacation Slots</div>
+                <div id="slots-container-before">
+                    {% for slot in before_vacation_slots %}
+                    <div class="slot-row" data-slot-id="{{ slot.id }}">
+                        <div>
+                            <div class="slot-date">
+                                <span class="slot-badge {% if slot.shift == 'Morning' %}badge-morning{% else %}badge-evening{% endif %}">
+                                    {{ slot.shift }}
+                                </span>
+                                {{ slot.exam_date.date }}
+                            </div>
+                            <div class="slot-meta">
+                                Seats Left: <span class="seats-left">{{ slot.seats_left }}</span>
+                                {% if not slot.booking_closed %}
+                                    &nbsp;|&nbsp;<span class="time-remaining" data-seconds="{{ slot.time_remaining_seconds }}"></span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="action-btn">
+                            {% if slot.booking_closed %}
+                                <button class="btn btn-closed" disabled>Closed</button>
+                            {% elif slot.already_booked %}
+                                <button class="btn btn-closed" disabled>✓ Booked</button>
+                            {% elif slot.seats_left == 0 %}
+                                <button class="btn btn-closed" disabled>Full</button>
+                            {% elif teacher.final_duties <= 0 %}
+                                <button class="btn btn-closed" disabled>No Duties</button>
+                            {% else %}
+                                <a href="{% url 'book_slot' slot.id %}">
+                                    <button class="btn btn-book">Book Slot</button>
+                                </a>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <div>No before-vacation slots available.</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- After-Vacation Slots -->
+            <div class="card">
+                <div class="card-header">🏖️ After-Vacation Slots</div>
+                <div id="slots-container-after">
+                    {% for slot in after_vacation_slots %}
+                    <div class="slot-row" data-slot-id="{{ slot.id }}">
+                        <div>
+                            <div class="slot-date">
+                                <span class="slot-badge {% if slot.shift == 'Morning' %}badge-morning{% else %}badge-evening{% endif %}">
+                                    {{ slot.shift }}
+                                </span>
+                                {{ slot.exam_date.date }}
+                            </div>
+                            <div class="slot-meta">
+                                Seats Left: <span class="seats-left">{{ slot.seats_left }}</span>
+                                {% if not slot.booking_closed %}
+                                    &nbsp;|&nbsp;<span class="time-remaining" data-seconds="{{ slot.time_remaining_seconds }}"></span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="action-btn">
+                            {% if slot.booking_closed %}
+                                <button class="btn btn-closed" disabled>Closed</button>
+                            {% elif slot.already_booked %}
+                                <button class="btn btn-closed" disabled>✓ Booked</button>
+                            {% elif slot.seats_left == 0 %}
+                                <button class="btn btn-closed" disabled>Full</button>
+                            {% elif teacher.after_vacation_duties <= 0 %}
+                                <button class="btn btn-closed" disabled>No After-Vac Duties</button>
+                            {% else %}
+                                <a href="{% url 'book_slot' slot.id %}">
+                                    <button class="btn btn-book">Book Slot</button>
+                                </a>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <div>No after-vacation slots available.</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            {% else %}
+            <!-- Odd Semester — single slot list -->
+            <div class="card">
+                <div class="card-header">📋 Available Slots</div>
+                <div id="slots-container">
+                    {% for slot in slots %}
+                    <div class="slot-row" data-slot-id="{{ slot.id }}">
+                        <div>
+                            <div class="slot-date">
+                                <span class="slot-badge {% if slot.shift == 'Morning' %}badge-morning{% else %}badge-evening{% endif %}">
+                                    {{ slot.shift }}
+                                </span>
+                                {{ slot.exam_date.date }}
+                            </div>
+                            <div class="slot-meta">
+                                Seats Left: <span class="seats-left">{{ slot.seats_left }}</span>
+                                {% if not slot.booking_closed %}
+                                    &nbsp;|&nbsp;<span class="time-remaining" data-seconds="{{ slot.time_remaining_seconds }}"></span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="action-btn">
+                            {% if slot.booking_closed %}
+                                <button class="btn btn-closed" disabled>Closed</button>
+                            {% elif slot.already_booked %}
+                                <button class="btn btn-closed" disabled>✓ Booked</button>
+                            {% elif slot.seats_left == 0 %}
+                                <button class="btn btn-closed" disabled>Full</button>
+                            {% elif teacher.final_duties <= 0 %}
+                                <button class="btn btn-closed" disabled>No Duties</button>
+                            {% else %}
+                                <a href="{% url 'book_slot' slot.id %}">
+                                    <button class="btn btn-book">Book Slot</button>
+                                </a>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <div>No slots available for this session.</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+
+        <!-- Right: My Bookings -->
+        <div class="dashboard-right">
+            <div class="card">
+                <div class="card-header">📌 My Bookings</div>
+                <div id="bookings-container">
+                    {% for booking in my_bookings %}
+                    <div class="booking-row" data-booking-id="{{ booking.id }}">
+                        <div>
+                            <div class="booking-date">{{ booking.slot.exam_date.date }}</div>
+                            <div class="booking-shift">
+                                <span class="slot-badge {% if booking.slot.shift == 'Morning' %}badge-morning{% else %}badge-evening{% endif %}">
+                                    {{ booking.slot.shift }}
+                                </span>
+                                {% if booking.auto_assigned %}
+                                    <span class="auto-label">🤖 Auto</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="cancel-btn">
+                            {% if booking.slot.booking_closed %}
+                                <button class="btn btn-closed" disabled>Closed</button>
+                            {% else %}
+                                <a href="{% url 'cancel_booking' booking.id %}">
+                                    <button class="btn btn-cancel">Cancel</button>
+                                </a>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <div>No bookings yet.</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% elif active_session and active_session.status == 'completed' %}
+    <div class="card">
+        <div class="no-session">
+            <div class="no-session-icon">✅</div>
+            <h4>Session Completed</h4>
+            <p style="margin-bottom:20px;">The exam session has ended. You can download your personal duty report.</p>
+            <a href="{% url 'download_my_report' %}" class="download-report-btn">
+                📥 Download My Duty Report
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="no-session">
+            <div class="no-session-icon">🕐</div>
+            <h4>No Active Session</h4>
+            <p>There is no active exam session at the moment. Please check back later.</p>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+/* ─────────────────────────────────────────────
+   URL helpers
+────────────────────────────────────────────── */
+const BOOK_URL_TEMPLATE   = "{{ book_slot_url_template }}";
+const CANCEL_URL_TEMPLATE = "{{ cancel_booking_url_template }}";
+
+function bookUrl(slotId)    { return BOOK_URL_TEMPLATE.replace('999999', slotId); }
+function cancelUrl(bookingId) { return CANCEL_URL_TEMPLATE.replace('999999', bookingId); }
+
+
+/* ── Notification Dropdown ── */
+const dropdown = document.getElementById('notif-dropdown');
+const bellBadge = document.getElementById('bell-badge');
+
+function toggleNotifDropdown(e) {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+}
+
+document.addEventListener('click', function(e) {
+    if (!dropdown.contains(e.target) && e.target.id !== 'bell-btn') {
+        dropdown.classList.remove('open');
+    }
+});
+
+function updateBadge() {
+    const count = document.querySelectorAll('#notif-list .notif-item').length;
+    if (count > 0) {
+        bellBadge.textContent = count;
+        bellBadge.classList.add('visible');
+    } else {
+        bellBadge.classList.remove('visible');
+        const list = document.getElementById('notif-list');
+        if (!list.querySelector('.notif-empty')) {
+            list.innerHTML = '<div class="notif-empty" id="notif-empty"><div class="notif-empty-icon">🔕</div><div>No new notifications</div></div>';
+        }
+    }
+}
+
+function markAllRead() {
+    fetch("{% url 'mark_notifications_read' %}", {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    }).then(() => {
+        document.querySelectorAll('#notif-list .notif-item').forEach(el => el.remove());
+        updateBadge();
+        dropdown.classList.remove('open');
+    });
+}
+
+function renderNotification(notif) {
+    const list = document.getElementById('notif-list');
+    if (list.querySelector(`[data-notif-id="${notif.id}"]`)) return;
+
+    const empty = list.querySelector('.notif-empty');
+    if (empty) empty.remove();
+
+    const icons  = { booked: '✅', cancelled: '❌', auto_assigned: '🤖' };
+    const titles = { booked: 'Slot Booked', cancelled: 'Slot Cancelled', auto_assigned: 'Auto Assigned' };
+
+    const item = document.createElement('div');
+    item.className = 'notif-item';
+    item.dataset.notifId = notif.id;
+    item.innerHTML = `
+        <div class="notif-icon icon-${notif.activity}">${icons[notif.activity] || '🔔'}</div>
+        <div class="notif-body">
+            <div class="notif-title">${titles[notif.activity] || notif.activity}</div>
+            <div class="notif-msg" title="${notif.message}">${notif.message}</div>
+            <div class="notif-time">${notif.created_at}</div>
+        </div>
+        <div class="unread-dot"></div>
+    `;
+    list.prepend(item);
+    updateBadge();
+
+    fetch("{% url 'mark_notifications_read' %}", {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+}
+
+/* ── Countdown ── */
+function formatSeconds(seconds) {
+    if (seconds <= 0) return "Closed";
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${d}d ${h}h ${m}m ${s}s`;
+}
+
+/* Per-slot countdown timers */
+function initSlotCountdowns() {
+    document.querySelectorAll('.time-remaining[data-seconds]').forEach(el => {
+        let seconds = parseInt(el.dataset.seconds);
+        if (isNaN(seconds) || seconds <= 0) { el.textContent = ''; return; }
+        el.textContent = formatSeconds(seconds);
+        const iv = setInterval(() => {
+            seconds -= 1;
+            if (seconds <= 0) { el.textContent = ''; clearInterval(iv); }
+            else { el.textContent = formatSeconds(seconds); }
+        }, 1000);
+    });
+}
+
+function initGlobalCountdown() {
+    const firstEl = document.querySelector('.time-remaining[data-seconds]');
+    if (!firstEl) return;
+    let seconds = parseInt(firstEl.dataset.seconds);
+    if (isNaN(seconds)) return;
+    const globalEl = document.getElementById('global-countdown');
+    if (!globalEl) return;
+    globalEl.textContent = formatSeconds(seconds);
+    const interval = setInterval(() => {
+        seconds -= 1;
+        if (seconds <= 0) {
+            globalEl.textContent = "Closed";
+            clearInterval(interval);
+            pollDashboard();
+        } else {
+            globalEl.textContent = formatSeconds(seconds);
+        }
+    }, 1000);
+}
+
+/* ── Poll ── */
+function pollDashboard() {
+    fetch("{% url 'dashboard_data' %}")
+        .then(r => r.json())
+        .then(data => {
+            // Update duties count
+            document.getElementById('duties-count').textContent = data.final_duties;
+
+            // Update after-vacation duties count
+            const afterVacEl = document.getElementById('after-vac-duties-count');
+            if (afterVacEl) afterVacEl.textContent = data.after_vacation_duties;
+
+            // Update bookings count in stats
+            const bookingsCountEl = document.getElementById('bookings-count');
+            if (bookingsCountEl) bookingsCountEl.textContent = data.bookings.length;
+
+            // Push new notifications
+            data.notifications.forEach(notif => renderNotification(notif));
+
+            // Update slot rows
+            data.slots.forEach(slot => {
+                const row = document.querySelector(`[data-slot-id="${slot.id}"]`);
+                if (!row) return;
+
+                // Update seats left
+                row.querySelector('.seats-left').textContent = slot.seats_left;
+
+                const actionBtn = row.querySelector('.action-btn');
+                if (slot.booking_closed) {
+                    actionBtn.innerHTML = `<button class="btn btn-closed" disabled>Closed</button>`;
+                } else if (slot.already_booked) {
+                    actionBtn.innerHTML = `<button class="btn btn-closed" disabled>✓ Booked</button>`;
+                } else if (slot.seats_left === 0) {
+                    actionBtn.innerHTML = `<button class="btn btn-closed" disabled>Full</button>`;
+                } else if (slot.is_after_vacation && data.after_vacation_duties <= 0) {
+                    actionBtn.innerHTML = `<button class="btn btn-closed" disabled>No After-Vac Duties</button>`;
+                } else if (!slot.is_after_vacation && data.final_duties <= 0) {
+                    actionBtn.innerHTML = `<button class="btn btn-closed" disabled>No Duties</button>`;
+                } else {
+                    actionBtn.innerHTML = `<a href="${bookUrl(slot.id)}"><button class="btn btn-book">Book Slot</button></a>`;
+                }
+            });
+
+            // Update bookings panel
+            const bookingsContainer = document.getElementById('bookings-container');
+            if (data.bookings.length === 0) {
+                bookingsContainer.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>No bookings yet.</div></div>';
+            } else {
+                data.bookings.forEach(booking => {
+                    const row = bookingsContainer.querySelector(`[data-booking-id="${booking.id}"]`);
+                    if (!row) return;
+
+                    const cancelBtn = row.querySelector('.cancel-btn');
+                    if (booking.booking_closed) {
+                        cancelBtn.innerHTML = `<button class="btn btn-closed" disabled>Closed</button>`;
+                    } else {
+                        cancelBtn.innerHTML = `<a href="${cancelUrl(booking.id)}"><button class="btn btn-cancel">Cancel</button></a>`;
+                    }
+                });
+            }
+        });
+}
+
+initGlobalCountdown();
+initSlotCountdowns();
+setInterval(pollDashboard, 5000);
+</script>
+
+{% endblock %}

@@ -1,0 +1,34 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>{% block title %}Exam Duty System{% endblock %}</title>
+    {% include 'includes/head_common.html' %}
+</head>
+<body>
+
+<!-- Global Navbar -->
+<nav class="app-navbar">
+    {% include 'includes/navbar_brand.html' %}
+    <div class="nav-actions">
+        {% include 'includes/theme_toggle.html' %}
+    </div>
+</nav>
+
+<div class="container mt-4">
+    {% block content %}
+    {% endblock %}
+</div>
+
+<script>
+function toggleTheme() {
+  var html = document.documentElement;
+  var current = html.getAttribute('data-theme');
+  var next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('edm-theme', next);
+}
+</script>
+
+</body>
+</html>

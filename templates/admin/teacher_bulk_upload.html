@@ -1,0 +1,39 @@
+{% extends "admin/base_site.html" %}
+{% block title %}Bulk Upload Teachers{% endblock %}
+
+{% block content %}
+<h1>Bulk Upload Teachers</h1>
+
+<p>Upload an Excel file (.xlsx) with the following column headers:</p>
+
+<pre style="background:#f4f4f4; padding:10px; border-radius:4px;">
+faculty_id | full_name | department | phone_number | email | role
+F001       | Mahesh    | CSE        | 9876543210   | mahesh@gmail.com | permanent
+F002       | Mahesh Kumar Gupta | Mechanical | 9876543211 | mk@gmail.com | adhoc
+F003       | Alice     |            | 9876543212   | alice@gmail.com | deputy_superintendent
+</pre>
+
+<p style="color:#888; font-size:13px;">
+    ℹ️ <code>faculty_id</code> is required and must be unique.<br>
+    ℹ️ <code>full_name</code> is required.<br>
+    ℹ️ <code>email</code> is required.<br>
+    ℹ️ <code>department</code>, <code>phone_number</code>, and <code>role</code> are optional.<br>
+    🔄 <code>role</code> values: <strong>deputy_superintendent / adhoc / permanent / guest</strong> (default: permanent)<br>
+</p>
+
+<p style="color:red; font-size:13px;">
+    ⚠️ Use <code>full_name</code> only. Do NOT use first_name/last_name columns.<br>
+    ⚠️ Each <code>faculty_id</code> must be unique.
+</p>
+
+<form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div style="margin-bottom:15px;">
+        <label><strong>Excel File (.xlsx):</strong></label><br>
+        <input type="file" name="xlsx_file" accept=".xlsx,.xls" required style="margin-top:5px;">
+    </div>
+    <input type="submit" value="📤 Upload Teachers" class="default" style="padding:10px 20px; font-size:15px;">
+</form>
+{% endblock %}
+
+

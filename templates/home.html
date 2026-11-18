@@ -1,0 +1,107 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Duty System</title>
+    {% include 'includes/head_common.html' %}
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="app-navbar">
+    {% include 'includes/navbar_brand.html' %}
+    <div class="nav-actions">
+        {% include 'includes/theme_toggle.html' %}
+        <a href="{% url 'login' %}" class="btn-login-nav">🔐 Teacher Login</a>
+    </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+    <div class="hero-content">
+        <h1>Smart Exam Duty Management</h1>
+        <p>A modern system for managing exam duty slots for teachers — book, track and stay updated in real time.</p>
+        <a href="{% url 'login' %}" class="btn-hero">🔐 Login to Dashboard →</a>
+    </div>
+</div>
+
+<!-- Stats Bar -->
+<div class="stats-bar">
+    <div class="stat-item">
+        <div class="num">⚡</div>
+        <div class="label">Real-time Updates</div>
+    </div>
+    <div class="stat-item">
+        <div class="num">🤖</div>
+        <div class="label">Auto Assignment</div>
+    </div>
+    <div class="stat-item">
+        <div class="num">🔔</div>
+        <div class="label">Instant Notifications</div>
+    </div>
+    <div class="stat-item">
+        <div class="num">📧</div>
+        <div class="label">Email OTP Security</div>
+    </div>
+</div>
+
+<!-- Features -->
+<div class="features">
+    <div class="feature-card">
+        <div class="feature-icon">📅</div>
+        <h4>Easy Slot Booking</h4>
+        <p>Browse available exam slots and book your duty with a single click. Real-time seat availability shown.</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h4>Auto Assignment</h4>
+        <p>Unbooked duties are automatically assigned after the deadline ensuring full coverage every time.</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">⚖️</div>
+        <h4>Fair Distribution</h4>
+        <p>Duties are distributed fairly among all teachers with relaxation support for eligible staff.</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">🔔</div>
+        <h4>Live Notifications</h4>
+        <p>Get instant notifications for bookings, cancellations and auto-assignments right on your dashboard.</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">⏳</div>
+        <h4>Deadline Tracking</h4>
+        <p>Live countdown timer shows exactly how much time is left to book your exam duty slots.</p>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon">🔐</div>
+        <h4>Secure Access</h4>
+        <p>OTP-based password reset via email ensures your account stays safe and accessible.</p>
+    </div>
+</div>
+
+<!-- CTA -->
+<div class="cta">
+    <h3>Ready to manage your duties?</h3>
+    <p>Log in to your teacher account and get started.</p>
+    <a href="{% url 'login' %}" class="btn-cta">Get Started →</a>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+    © 2026 Exam Duty System — Deen Dayal Upadhyaya College, University of Delhi
+</div>
+
+<script>
+function toggleTheme() {
+  var html = document.documentElement;
+  var current = html.getAttribute('data-theme');
+  var next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('edm-theme', next);
+}
+</script>
+
+</body>
+</html>

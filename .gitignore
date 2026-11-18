@@ -1,0 +1,44 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases and backups
+*.sqlite3
+*.sqlite3-*
+*.db
+*.sql
+*.dump
+*.bak
+*.backup
+
+# Local IDE and assistant settings
+.vscode/
+.claude/
+
+# Generated static files
+staticfiles/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+.DS_Store
+
+# Windows metadata
+*:Zone.Identifier
+static/admin/

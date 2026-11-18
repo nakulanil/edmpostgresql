@@ -1,0 +1,179 @@
+{% extends "admin/base_site.html" %}
+{% block title %}Setup Session{% endblock %}
+
+{% block content %}
+
+<h1>📂 Setup Session: {{ session.name }}</h1>
+
+<!-- Instructions -->
+<div style="background:#f8f9fa; padding:15px; border-radius:6px; margin-bottom:20px;">
+    <p><strong>Upload an Excel file (.xlsx) with the following column headers:</strong></p>
+    <code>exam_name | exam_date | morning_students | evening_students</code>
+
+    <p style="margin-top:10px;"><strong>Example (inside Excel):</strong></p>
+    <table style="background:#fff; padding:10px; border-radius:4px; border-collapse:collapse; font-size:13px;">
+        <tr style="background:#e9ecef;"><th style="padding:4px 10px; border:1px solid #ddd;">exam_name</th><th style="padding:4px 10px; border:1px solid #ddd;">exam_date</th><th style="padding:4px 10px; border:1px solid #ddd;">morning_students</th><th style="padding:4px 10px; border:1px solid #ddd;">evening_students</th></tr>
+        <tr><td style="padding:4px 10px; border:1px solid #ddd;">Maths</td><td style="padding:4px 10px; border:1px solid #ddd;">2026-04-10</td><td style="padding:4px 10px; border:1px solid #ddd;">120</td><td style="padding:4px 10px; border:1px solid #ddd;">80</td></tr>
+        <tr><td style="padding:4px 10px; border:1px solid #ddd;">Physics</td><td style="padding:4px 10px; border:1px solid #ddd;">2026-04-10</td><td style="padding:4px 10px; border:1px solid #ddd;">0</td><td style="padding:4px 10px; border:1px solid #ddd;">80</td></tr>
+        <tr><td style="padding:4px 10px; border:1px solid #ddd;">Chemistry</td><td style="padding:4px 10px; border:1px solid #ddd;">2026-04-11</td><td style="padding:4px 10px; border:1px solid #ddd;">150</td><td style="padding:4px 10px; border:1px solid #ddd;">0</td></tr>
+    </table>
+
+    <p style="color:#888; font-size:13px; margin-top:8px;">
+        ℹ️ Total students is auto-calculated as <strong>morning + evening</strong> — no need to include it.<br>
+        ℹ️ If <code>morning_students</code> is 0 → no morning slot created.<br>
+        ℹ️ If <code>evening_students</code> is 0 → no evening slot created.<br>
+        ℹ️ Invigilator positions are auto-calculated as <strong>ceil(students / room_capacity) × 2</strong> per shift.
+    </p>
+</div>
+
+<form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <!-- Semester Type -->
+    <h3>🎓 Semester</h3>
+    <div style="margin-bottom:15px; max-width:400px;">
+        <label><strong>Semester Type:</strong></label><br>
+        <select name="semester_type" id="semester_type"
+                style="width:100%; padding:6px; margin-top:5px;">
+            <option value="odd" {% if session.semester_type == 'odd' %}selected{% endif %}>Odd Semester</option>
+            <option value="even" {% if session.semester_type == 'even' %}selected{% endif %}>Even Semester</option>
+        </select>
+    </div>
+
+    <!-- Vacation Start Date (only for even semester) -->
+    <div id="vacation-group" style="margin-bottom:15px; max-width:400px; {% if session.semester_type != 'even' %}display:none;{% endif %}">
+        <label><strong>Vacation Start Date:</strong></label><br>
+        <input type="date" name="vacation_start_date"
+               value="{{ session.vacation_start_date|date:'Y-m-d' }}"
+               style="width:100%; padding:6px; margin-top:5px;">
+        <small style="color:#666;">
+            Exam dates are split into before-vacation and after-vacation sets.
+        </small>
+
+        <div style="margin-top:12px;">
+            <label><strong>Duties per Guest Teacher (n):</strong></label><br>
+            <input type="number" name="guest_duties_per_teacher"
+                   value="{{ session.guest_duties_per_teacher|default:'' }}"
+                   min="0" placeholder="e.g. 3"
+                   style="width:100%; padding:6px; margin-top:5px;">
+            <small style="color:#666;">
+                Number of after-vacation duties each guest teacher will get.
+                Remaining duties (if any) are distributed among adhoc & permanent teachers.
+            </small>
+        </div>
+    </div>
+
+    <!-- Minimum Duty -->
+    <div style="margin-bottom:20px; max-width:200px;">
+        <label><strong>Minimum Duty:</strong></label><br>
+        <input type="number" name="minimum_duty" value="{{ session.minimum_duty|default:1 }}" min="1"
+               style="width:100%; padding:6px; margin-top:5px;">
+        <small style="color:#666;">
+            Floor for final_duties — no teacher gets fewer than this.
+        </small>
+    </div>
+
+    <!-- Room Capacity -->
+    <div style="margin-bottom:20px; max-width:200px;">
+        <label><strong>Room Capacity:</strong></label><br>
+        <input type="number" name="room_capacity" value="{{ session.room_capacity|default:50 }}" min="1"
+               style="width:100%; padding:6px; margin-top:5px;">
+        <small style="color:#666;">
+            Number of students one exam room can hold. Used to calculate rooms & invigilator positions.
+        </small>
+    </div>
+
+    <!-- Exam Excel Upload -->
+    <div style="margin-bottom:20px;">
+        <label><strong>Exam Excel File (.xlsx):</strong></label><br>
+        <input type="file" name="excel_file" accept=".xlsx,.xls" required style="margin-top:5px;">
+    </div>
+
+    <!-- Practical Duty Excel Upload -->
+    <div style="margin-bottom:20px; background:#f0f4f8; padding:15px; border-radius:6px;">
+        <h3>📝 Practical Exam Duties</h3>
+        <p style="font-size:13px; color:#666; margin-bottom:10px;">
+            Upload an Excel file (.xlsx) with practical exam duty hours per teacher.
+            Used to calculate relaxed_duties (floor of hours/3).
+        </p>
+        <label><strong>Practical Duty Excel File (.xlsx):</strong></label><br>
+        <input type="file" name="practical_excel_file" accept=".xlsx,.xls" style="margin-top:5px;">
+        <p style="font-size:12px; color:#888; margin-top:8px;">
+            Required columns: <code>full_name</code> (or <code>teacher_name</code>), <code>faculty_id</code>, <code>duty_hours</code>
+        </p>
+    </div>
+
+    <!-- Booking Deadline -->
+    <div style="margin-bottom:15px; max-width:400px;">
+        <label><strong>Booking Deadline:</strong></label><br>
+        <input type="datetime-local" name="booking_deadline" required
+               style="width:100%; padding:6px; margin-top:5px;">
+    </div>
+
+    <!-- Buffer -->
+    <div style="margin-bottom:20px; max-width:200px;">
+        <label><strong>Extra Buffer Slots:</strong></label><br>
+        <input type="number" name="buffer" value="0" min="0"
+               style="width:100%; padding:6px; margin-top:5px;">
+        <small style="color:#666;">
+            Extra invigilator slots added per shift.
+        </small>
+    </div>
+
+    <!-- TIME SETTINGS -->
+    <h3>⏰ Shift Timings</h3>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; max-width:500px; margin-bottom:20px;">
+
+        <div>
+            <label><strong>Morning Start:</strong></label><br>
+            <input type="time" name="morning_start" value="09:00" required
+                   style="width:100%; padding:6px; margin-top:5px;">
+        </div>
+
+        <div>
+            <label><strong>Morning End:</strong></label><br>
+            <input type="time" name="morning_end" value="12:00" required
+                   style="width:100%; padding:6px; margin-top:5px;">
+        </div>
+
+        <div>
+            <label><strong>Evening Start:</strong></label><br>
+            <input type="time" name="evening_start" value="15:00" required
+                   style="width:100%; padding:6px; margin-top:5px;">
+        </div>
+
+        <div>
+            <label><strong>Evening End:</strong></label><br>
+            <input type="time" name="evening_end" value="18:00" required
+                   style="width:100%; padding:6px; margin-top:5px;">
+        </div>
+
+    </div>
+
+    <!-- Submit -->
+    <div>
+        <input type="submit" value="🚀 Create Session"
+               class="default"
+               style="padding:10px 20px; font-size:15px;">
+    </div>
+
+</form>
+
+<script>
+// Show/hide vacation date based on semester type
+const semesterSelect = document.getElementById('semester_type');
+const vacationGroup = document.getElementById('vacation-group');
+
+semesterSelect.addEventListener('change', function() {
+    if (this.value === 'even') {
+        vacationGroup.style.display = 'block';
+    } else {
+        vacationGroup.style.display = 'none';
+    }
+});
+</script>
+
+{% endblock %}
+
+

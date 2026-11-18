@@ -1,0 +1,90 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Exam Duty System</title>
+    {% include 'includes/head_common.html' %}
+</head>
+<body style="min-height:100vh; background:linear-gradient(135deg, #3f3f46, #27272a); display:flex; align-items:center; justify-content:center;">
+
+<div class="login-wrapper">
+
+    <!-- Left Panel -->
+    <div class="login-left">
+        <div class="icon">📋</div>
+        <h2>Exam Duty System</h2>
+        <p>Manage your exam duty slots efficiently. Book, track and stay updated in real time.</p>
+        <div class="badge-row">
+            <span class="badge-item">📅 Slot Booking</span>
+            <span class="badge-item">🔔 Notifications</span>
+            <span class="badge-item">🤖 Auto Assign</span>
+        </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="login-right">
+        <h3>Welcome Back 👋</h3>
+        <p class="subtitle">Sign in to your teacher account</p>
+
+        {% if form.errors %}
+        <div class="alert-error">
+            ❌ Invalid username or password. Please try again.
+        </div>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="field-group">
+                <label>Username</label>
+                <input type="text"
+                       name="username"
+                       class="form-control"
+                       placeholder="Enter your username"
+                       value="{{ form.username.value|default:'' }}"
+                       autofocus
+                       required>
+            </div>
+
+            <div class="field-group">
+                <label>Password</label>
+                <input type="password"
+                       name="password"
+                       class="form-control"
+                       placeholder="Enter your password"
+                       required>
+            </div>
+
+            <button type="submit" class="btn-submit" style="margin-top:10px;">
+                🔐 Sign In
+            </button>
+
+            <div class="login-forgot-link">
+                <a href="{% url 'forgot_password' %}" style="font-size:13px; color:var(--clr-link); text-decoration:none;">
+                    Forgot Password?
+                </a>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+<!-- Floating theme toggle -->
+<button class="theme-toggle-floating" onclick="toggleTheme()" title="Toggle dark/light mode" aria-label="Toggle theme">
+    <span class="theme-toggle-icon"></span>
+</button>
+
+<script>
+function toggleTheme() {
+  var html = document.documentElement;
+  var current = html.getAttribute('data-theme');
+  var next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('edm-theme', next);
+}
+</script>
+
+</body>
+</html>
