@@ -132,3 +132,35 @@ class ConcurrentBookingTest(TransactionTestCase):
             teacher.refresh_from_db()
             booked = int(teacher.teacher_id in booked_teacher_ids)
             self.assertEqual(teacher.final_duties, 1 - booked)
+
+    def test_double_cancellation_restores_quota_only_once(self):
+        """Two concurrent cancellation requests cannot both refund one duty."""
+        user, teacher = self.make_teacher(200, duties=0)
+        slot = Slot.objects.create(
+            exam_date=self.exam, shift="Morning",
+            total_positions=2, filled_positions=1,
+        )
+        booking = Booking.objects.create(teacher=teacher, slot=slot)
+        gate = Barrier(2)
+
+        def cancel():
+            close_old_connections()
+            try:
+                client = Client()
+                client.force_login(user)
+                gate.wait(timeout=10)
+                response = client.post(reverse("cancel_booking", args=[booking.pk]))
+                return response.status_code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = [future.result(timeout=15) for future in
+                         [pool.submit(cancel), pool.submit(cancel)]]
+
+        self.assertEqual(responses, [302, 302])
+        self.assertFalse(Booking.objects.filter(pk=booking.pk).exists())
+        slot.refresh_from_db()
+        teacher.refresh_from_db()
+        self.assertEqual(slot.filled_positions, 0)
+        self.assertEqual(teacher.final_duties, 1)
