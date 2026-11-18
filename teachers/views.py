@@ -393,15 +393,26 @@ def cancel_booking(request, booking_id):
 
     with transaction.atomic():
         try:
-            booking = Booking.objects.select_related('slot').get(
-                id=booking_id,
-                teacher=teacher
+            # Read the slot ID without trusting a potentially stale Booking
+            # object. Two cancellation requests can read the same Booking
+            # before either one acquires the slot lock.
+            slot_id = Booking.objects.values_list('slot_id', flat=True).get(
+                id=booking_id, teacher_id=teacher.pk
             )
         except Booking.DoesNotExist:
             messages.error(request, "Booking not found or not yours to cancel.")
             return redirect('dashboard')
-        slot = Slot.objects.select_for_update().get(id=booking.slot.id)
+        slot = Slot.objects.select_for_update().get(id=slot_id)
         teacher = Teacher.objects.select_for_update().get(pk=teacher.pk)
+        # Re-check existence AFTER acquiring the lock. The first request may
+        # already have cancelled this booking while the second was waiting.
+        try:
+            booking = Booking.objects.get(
+                id=booking_id, slot_id=slot.pk, teacher_id=teacher.pk
+            )
+        except Booking.DoesNotExist:
+            messages.error(request, "Booking already cancelled.")
+            return redirect('dashboard')
 
         if timezone.now() > slot.exam_date.booking_deadline:
             messages.error(request, "Cancellation deadline passed.")
