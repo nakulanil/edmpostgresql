@@ -297,10 +297,17 @@ def book_slot(request, slot_id):
         return err
 
     with transaction.atomic():
-        slot = Slot.objects.select_for_update().get(id=slot_id)
+        slot = Slot.objects.select_for_update().select_related('exam_date__session').get(id=slot_id)
+        # Serialize requests from the same teacher even when they target
+        # DIFFERENT slots. Otherwise both requests can read the same stale
+        # duty counter and each decrement it, losing one update.
+        teacher = Teacher.objects.select_for_update().get(pk=teacher.pk)
 
         # Determine active session and whether this slot is after vacation
-        active_session = Session.objects.filter(status='active').first()
+        active_session = slot.exam_date.session
+        if active_session is None or active_session.status != 'active':
+            messages.error(request, "This exam session is not active.")
+            return redirect('dashboard')
         is_after_vacation = False
         if active_session and active_session.semester_type == 'even' and active_session.vacation_start_date:
             is_after_vacation = slot.exam_date.date >= active_session.vacation_start_date
@@ -393,14 +400,15 @@ def cancel_booking(request, booking_id):
         except Booking.DoesNotExist:
             messages.error(request, "Booking not found or not yours to cancel.")
             return redirect('dashboard')
-        slot = Slot.objects.select_for_update().get(id=booking.slot.id)
+        slot = Slot.objects.select_for_update().select_related('exam_date__session').get(id=booking.slot.id)
+        teacher = Teacher.objects.select_for_update().get(pk=teacher.pk)
 
         if timezone.now() > slot.exam_date.booking_deadline:
             messages.error(request, "Cancellation deadline passed.")
             return redirect('dashboard')
 
         # Determine if this booking was for an after-vacation slot
-        active_session = Session.objects.filter(status='active').first()
+        active_session = slot.exam_date.session
         is_after_vacation = False
         if active_session and active_session.semester_type == 'even' and active_session.vacation_start_date:
             is_after_vacation = slot.exam_date.date >= active_session.vacation_start_date
