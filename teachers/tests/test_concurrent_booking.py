@@ -84,3 +84,29 @@ class ConcurrentBookingTest(TransactionTestCase):
         teacher_a.refresh_from_db()
         teacher_b.refresh_from_db()
         self.assertEqual(teacher_a.final_duties + teacher_b.final_duties, 1)
+
+    def test_eight_teachers_compete_for_three_positions(self):
+        """Contention must not overfill a slot or lose teacher counters."""
+        participants = [self.make_teacher(i, duties=1) for i in range(10, 18)]
+        slot = Slot.objects.create(
+            exam_date=self.exam, shift="Morning", total_positions=3,
+        )
+        statuses = self.book_in_parallel(
+            [(user, slot.pk) for user, _teacher in participants]
+        )
+        self.assertEqual(statuses, [302] * len(participants))
+        bookings = Booking.objects.filter(slot=slot)
+        self.assertEqual(bookings.count(), 3)
+        self.assertEqual(bookings.values("teacher_id").distinct().count(), 3)
+        slot.refresh_from_db()
+        self.assertEqual(slot.filled_positions, 3)
+        remaining = 0
+        for _user, teacher in participants:
+            teacher.refresh_from_db()
+            self.assertIn(teacher.final_duties, (0, 1))
+            self.assertEqual(
+                Booking.objects.filter(slot=slot, teacher=teacher).count(),
+                1 - teacher.final_duties,
+            )
+            remaining += teacher.final_duties
+        self.assertEqual(remaining, 5)
