@@ -59,12 +59,25 @@ class CollegeExcelImportTest(TestCase):
             "deputy_superintendent",
         )
         self.assertEqual(Teacher.objects.get(faculty_id="SYN001").department.name, "Computer Science")
+        # New accounts get random, usable credentials, not predictable
+        # name-based passwords; re-import must preserve the password hash.
+        first = Teacher.objects.get(faculty_id="SYN001")
+        first_password_hash = first.user.password
+        credentials = response.context_data["teachers"]
+        first_credentials = next(t for t in credentials if t["faculty_id"] == "SYN001")
+        self.assertNotEqual(first_credentials["password"], "example.one@123")
+        self.assertGreaterEqual(len(first_credentials["password"]), 20)
+        self.assertTrue(first.user.check_password(first_credentials["password"]))
+
 
         rows[0][3] = "updated@example.test"
         response = self.client.post(url, {"xlsx_file": excel_file("faculty.xlsx", headers, rows)})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Teacher.objects.count(), 4)
         self.assertEqual(Teacher.objects.get(faculty_id="SYN001").email, "updated@example.test")
+        first.user.refresh_from_db()
+        self.assertEqual(first.user.password, first_password_hash)
+
 
     def test_session_excel_upload_creates_exam_dates_slots_and_duty_quotas(self):
         Teacher.objects.create(
