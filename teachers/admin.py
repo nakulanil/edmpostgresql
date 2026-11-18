@@ -592,8 +592,6 @@ class SessionAdmin(admin.ModelAdmin):
             created_dates = 0
             created_slots = 0
 
-            from .scheduler import schedule_auto_assignment
-
             for date, exams in data.items():
                 total_students         = sum(e['total_students']   for e in exams)
                 total_morning_students = sum(e['morning_students'] for e in exams)
@@ -623,8 +621,8 @@ class SessionAdmin(admin.ModelAdmin):
                     exam_date.evening_end      = evening_end
                     exam_date.save()
 
-                # Schedule per-ExamDate auto-assignment
-                schedule_auto_assignment(exam_date.booking_deadline, session.id, exam_date.id)
+                # Dedicated scheduler reconciles this committed ExamDate automatically.
+                # Do not enqueue jobs from the web/admin process.
 
                 exam_date.exams.all().delete()
                 exam_date.slots.all().delete()
@@ -827,8 +825,8 @@ class SessionAdmin(admin.ModelAdmin):
                 session.status = 'active'
                 session.save()
 
-            # ── Schedule auto assignment ──
-            # Scheduled per-ExamDate inside the loop above
+            # ── Auto-assignment scheduling ──
+            # The dedicated run_scheduler service observes the saved exam dates.
 
             # ── Success message ──
             if is_even:
