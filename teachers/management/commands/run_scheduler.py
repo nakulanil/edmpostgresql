@@ -15,21 +15,16 @@ and should be run as a separate systemd service in production.
 """
 
 import logging
-import os
 import signal
 import sys
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from django.db.models import F
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from django_apscheduler.jobstores import DjangoJobStore
 from django_apscheduler.models import DjangoJob
-
-# Use custom TestJobStore in test environments to prevent connection closure
-from teachers.scheduler_stores import TestJobStore
 
 from teachers.scheduler import (
     auto_assign_duties,
@@ -46,11 +41,20 @@ class Command(BaseCommand):
         parser.add_argument(
             "--once",
             action="store_true",
-            help="Run reconciliation once and exit (for testing).",
+            help="Process overdue deadlines once without starting APScheduler.",
         )
 
     def handle(self, *args, **options):
         once = options.get("once", False)
+
+        # One-shot reconciliation must not start a background scheduler. Its
+        # DjangoJobStore.shutdown() closes the active Django DB connection,
+        # breaking TestCase transactions and subsequent queries. The daemon
+        # mode below is responsible for persisting future deadline jobs.
+        if once:
+            self._process_overdue()
+            logger.info("One-shot overdue reconciliation complete.")
+            return
 
         scheduler_instance = BackgroundScheduler(
             timezone=timezone.get_current_timezone()
@@ -66,10 +70,7 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, shutdown)
         signal.signal(signal.SIGINT, shutdown)
 
-        # Production must use DjangoJobStore. The test-specific store avoids
-        # closing Django's TestCase transaction connection during --once tests.
-        jobstore = TestJobStore() if os.environ.get("TESTING") == "1" else DjangoJobStore()
-        scheduler_instance.add_jobstore(jobstore, "default")
+        scheduler_instance.add_jobstore(DjangoJobStore(), "default")
         scheduler_instance.start()
         logger.info("Scheduler started.")
 
@@ -89,27 +90,7 @@ class Command(BaseCommand):
 
         current_time = timezone.now()
 
-        # Find all active sessions with expired deadlines
-        sessions_needing = find_sessions_needing_assignment()
-
-        for session_id, exam_date_ids in sessions_needing.items():
-            for exam_date_id in exam_date_ids:
-                job_id = f"auto_assign_duties_{session_id}_{exam_date_id}"
-                existing = scheduler_instance.get_job(job_id)
-                if existing is None:
-                    # Deadline has passed — run assignment immediately
-                    logger.info(
-                        "Scheduling immediate auto-assignment for session %s, "
-                        "exam %s (deadline passed)",
-                        session_id, exam_date_id,
-                    )
-                    try:
-                        auto_assign_duties(session_id=session_id, exam_date_id=exam_date_id)
-                    except Exception:
-                        logger.exception(
-                            "Auto-assignment failed for session %s, exam %s",
-                            session_id, exam_date_id,
-                        )
+        self._process_overdue()
 
         # 3. Restore missing future jobs for ExamDates with deadlines still ahead
         #    Only schedule for active sessions with future deadlines
@@ -140,21 +121,6 @@ class Command(BaseCommand):
                         kwargs={"session_id": session.id, "exam_date_id": exam_date.id},
                     )
 
-        if once:
-            logger.info("Reconciliation complete. Shutting down (--once mode).")
-            # Properly shutdown the scheduler in --once mode for production safety
-            # This ensures BackgroundScheduler resources are cleaned up
-            scheduler_instance.shutdown(wait=False)
-            
-            # IMPORTANT: Close stale database connections after scheduler shutdown.
-            # The DjangoJobStore.shutdown() closes the DB connection. We clean up
-            # the stale connection so Django's connection pool is properly reset.
-            # Subsequent operations will automatically establish a fresh connection.
-            from django.db import close_old_connections
-            close_old_connections()
-            
-            return
-
         logger.info("Scheduler running. Press Ctrl+C to stop.")
         try:
             # Keep the main thread alive
@@ -167,3 +133,14 @@ class Command(BaseCommand):
             if scheduler_instance.running:
                 scheduler_instance.shutdown(wait=False)
             logger.info("Scheduler stopped.")
+    def _process_overdue(self):
+        """Reconcile overdue exam dates synchronously and idempotently."""
+        for session_id, exam_date_ids in find_sessions_needing_assignment().items():
+            for exam_date_id in exam_date_ids:
+                try:
+                    auto_assign_duties(session_id=session_id, exam_date_id=exam_date_id)
+                except Exception:
+                    logger.exception(
+                        "Auto-assignment failed for session %s, exam %s",
+                        session_id, exam_date_id,
+                    )
