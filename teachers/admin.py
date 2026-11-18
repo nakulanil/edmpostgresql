@@ -448,6 +448,19 @@ class SessionAdmin(admin.ModelAdmin):
         session = Session.objects.get(pk=session_id)
 
         if request.method == 'POST':
+            # Setup recreates slots and recalculates teacher quotas. Once any
+            # bookings exist, re-uploading would cascade-delete those bookings
+            # and overwrite their duty counters. Reject before ANY writes.
+            if Booking.objects.filter(slot__exam_date__session=session).exists():
+                self.message_user(
+                    request,
+                    "Session setup is locked because teachers already have bookings. "
+                    "Preserve existing duties; use a separate reviewed amendment "
+                    "process instead of re-uploading this session.",
+                    level=messages.ERROR,
+                )
+                return redirect(request.path)
+
             excel_file = request.FILES.get('excel_file')
             practical_excel_file = request.FILES.get('practical_excel_file')
             booking_deadline_raw = request.POST.get('booking_deadline')
