@@ -1,6 +1,7 @@
 import io
 import math
 import random
+import secrets
 import openpyxl
 from django.db import models as db_models
 from django.template.response import TemplateResponse
@@ -242,14 +243,10 @@ class TeacherAdmin(admin.ModelAdmin):
                 if department_name:
                     department, _ = Department.objects.get_or_create(name=department_name)
 
-                # Generate default password from full_name
-                parts = full_name.split()
-                first_name = parts[0]
-                last_name = parts[-1] if len(parts) > 1 else ''
-                if last_name:
-                    password = f"{first_name.lower()}.{last_name.lower()}@123"
-                else:
-                    password = f"{first_name.lower()}@123"
+                # Generate a unique, unpredictable initial password. Never
+                # derive credentials from a teacher's publicly known name.
+                # Existing accounts retain their current password on reimport.
+                password = secrets.token_urlsafe(18)
 
                 parsed.append({
                     'faculty_id': faculty_id,
