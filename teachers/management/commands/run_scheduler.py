@@ -15,6 +15,7 @@ and should be run as a separate systemd service in production.
 """
 
 import logging
+import os
 import signal
 import sys
 
@@ -32,7 +33,6 @@ from teachers.scheduler_stores import TestJobStore
 
 from teachers.scheduler import (
     auto_assign_duties,
-    schedule_auto_assignment,
     find_sessions_needing_assignment,
 )
 
@@ -66,8 +66,10 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, shutdown)
         signal.signal(signal.SIGINT, shutdown)
 
-        # Add TestJobStore for persistence (doesn't close connections during shutdown in tests)
-        scheduler_instance.add_jobstore(TestJobStore(), "default")
+        # Production must use DjangoJobStore. The test-specific store avoids
+        # closing Django's TestCase transaction connection during --once tests.
+        jobstore = TestJobStore() if os.environ.get("TESTING") == "1" else DjangoJobStore()
+        scheduler_instance.add_jobstore(jobstore, "default")
         scheduler_instance.start()
         logger.info("Scheduler started.")
 
@@ -126,10 +128,16 @@ class Command(BaseCommand):
                         "exam %s at %s",
                         session.id, exam_date.id, exam_date.booking_deadline,
                     )
-                    schedule_auto_assignment(
-                        exam_date.booking_deadline,
-                        session.id,
-                        exam_date.id,
+                    # Schedule on THIS dedicated scheduler instance. The global
+                    # scheduler in teachers.scheduler is not running here.
+                    scheduler_instance.add_job(
+                        auto_assign_duties,
+                        trigger=DateTrigger(run_date=exam_date.booking_deadline),
+                        id=job_id,
+                        name=f"Auto assign session {session.id} exam {exam_date.id}",
+                        replace_existing=True,
+                        jobstore="default",
+                        kwargs={"session_id": session.id, "exam_date_id": exam_date.id},
                     )
 
         if once:
