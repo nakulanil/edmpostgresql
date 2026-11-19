@@ -20,19 +20,14 @@ import sys
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from django.db.models import F
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from django_apscheduler.jobstores import DjangoJobStore
 from django_apscheduler.models import DjangoJob
 
-# Use custom TestJobStore in test environments to prevent connection closure
-from teachers.scheduler_stores import TestJobStore
-
 from teachers.scheduler import (
     auto_assign_duties,
-    schedule_auto_assignment,
     find_sessions_needing_assignment,
 )
 
@@ -46,11 +41,20 @@ class Command(BaseCommand):
         parser.add_argument(
             "--once",
             action="store_true",
-            help="Run reconciliation once and exit (for testing).",
+            help="Process overdue deadlines once without starting APScheduler.",
         )
 
     def handle(self, *args, **options):
         once = options.get("once", False)
+
+        # One-shot reconciliation must not start a background scheduler. Its
+        # DjangoJobStore.shutdown() closes the active Django DB connection,
+        # breaking TestCase transactions and subsequent queries. The daemon
+        # mode below is responsible for persisting future deadline jobs.
+        if once:
+            self._process_overdue()
+            logger.info("One-shot overdue reconciliation complete.")
+            return
 
         scheduler_instance = BackgroundScheduler(
             timezone=timezone.get_current_timezone()
@@ -66,10 +70,10 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, shutdown)
         signal.signal(signal.SIGINT, shutdown)
 
-        # Add TestJobStore for persistence (doesn't close connections during shutdown in tests)
-        scheduler_instance.add_jobstore(TestJobStore(), "default")
-        scheduler_instance.start()
-        logger.info("Scheduler started.")
+        scheduler_instance.add_jobstore(DjangoJobStore(), "default")
+        # Keep stored jobs paused until we reconcile the current DB state.
+        scheduler_instance.start(paused=True)
+        logger.info("Scheduler started (paused for reconciliation).")
 
         # Clean up legacy jobs (no session/exam_date scoping)
         try:
@@ -80,82 +84,78 @@ class Command(BaseCommand):
         except Exception:
             logger.exception("Failed to clean up legacy jobs.")
 
-        # ── Reconciliation ──
-        # 1. Restore missing future jobs for ExamDates with upcoming deadlines
-        # 2. Process overdue ExamDates immediately
-        from teachers.models import ExamDate, Session
-
-        current_time = timezone.now()
-
-        # Find all active sessions with expired deadlines
-        sessions_needing = find_sessions_needing_assignment()
-
-        for session_id, exam_date_ids in sessions_needing.items():
-            for exam_date_id in exam_date_ids:
-                job_id = f"auto_assign_duties_{session_id}_{exam_date_id}"
-                existing = scheduler_instance.get_job(job_id)
-                if existing is None:
-                    # Deadline has passed — run assignment immediately
-                    logger.info(
-                        "Scheduling immediate auto-assignment for session %s, "
-                        "exam %s (deadline passed)",
-                        session_id, exam_date_id,
-                    )
-                    try:
-                        auto_assign_duties(session_id=session_id, exam_date_id=exam_date_id)
-                    except Exception:
-                        logger.exception(
-                            "Auto-assignment failed for session %s, exam %s",
-                            session_id, exam_date_id,
-                        )
-
-        # 3. Restore missing future jobs for ExamDates with deadlines still ahead
-        #    Only schedule for active sessions with future deadlines
-        active_sessions = Session.objects.filter(status="active")
-        for session in active_sessions:
-            future_exam_dates = ExamDate.objects.filter(
-                session=session,
-                booking_deadline__gte=current_time,
-            )
-            for exam_date in future_exam_dates:
-                job_id = f"auto_assign_duties_{session.id}_{exam_date.id}"
-                existing = scheduler_instance.get_job(job_id)
-                if existing is None:
-                    logger.info(
-                        "Scheduling future auto-assignment for session %s, "
-                        "exam %s at %s",
-                        session.id, exam_date.id, exam_date.booking_deadline,
-                    )
-                    schedule_auto_assignment(
-                        exam_date.booking_deadline,
-                        session.id,
-                        exam_date.id,
-                    )
-
-        if once:
-            logger.info("Reconciliation complete. Shutting down (--once mode).")
-            # Properly shutdown the scheduler in --once mode for production safety
-            # This ensures BackgroundScheduler resources are cleaned up
-            scheduler_instance.shutdown(wait=False)
-            
-            # IMPORTANT: Close stale database connections after scheduler shutdown.
-            # The DjangoJobStore.shutdown() closes the DB connection. We clean up
-            # the stale connection so Django's connection pool is properly reset.
-            # Subsequent operations will automatically establish a fresh connection.
-            from django.db import close_old_connections
-            close_old_connections()
-            
-            return
+        self._process_overdue()
+        self._sync_future_jobs(scheduler_instance)
+        scheduler_instance.resume()
 
         logger.info("Scheduler running. Press Ctrl+C to stop.")
         try:
             # Keep the main thread alive
             while True:
                 import time as _time
-                _time.sleep(1)
+                _time.sleep(10)
+                self._process_overdue()
+                self._sync_future_jobs(scheduler_instance)
         except (KeyboardInterrupt, SystemExit):
             pass
         finally:
             if scheduler_instance.running:
                 scheduler_instance.shutdown(wait=False)
             logger.info("Scheduler stopped.")
+
+    def _process_overdue(self):
+        """Reconcile overdue exam dates synchronously and idempotently."""
+        for session_id, exam_date_ids in find_sessions_needing_assignment().items():
+            for exam_date_id in exam_date_ids:
+                try:
+                    auto_assign_duties(session_id=session_id, exam_date_id=exam_date_id)
+                except Exception:
+                    logger.exception(
+                        "Auto-assignment failed for session %s, exam %s",
+                        session_id, exam_date_id,
+                    )
+
+    def _sync_future_jobs(self, scheduler_instance):
+        """Reconcile the dedicated scheduler against committed ExamDate rows.
+
+        Admin uploads do not create scheduler jobs themselves. Polling allows
+        new dates, edited deadlines, and deleted dates to be reflected without
+        restarting the scheduler or starting a scheduler in the web workers.
+        """
+        from teachers.models import ExamDate
+
+        now = timezone.now()
+        future_exams = ExamDate.objects.filter(
+            session__status="active",
+            booking_deadline__gt=now,
+        ).select_related("session")
+
+        desired_ids = set()
+        for exam_date in future_exams:
+            session_id = exam_date.session_id
+            job_id = f"auto_assign_duties_{session_id}_{exam_date.pk}"
+            desired_ids.add(job_id)
+            job = scheduler_instance.get_job(job_id)
+            if job is not None:
+                current_run_time = getattr(job, "next_run_time", None)
+                # An object without next_run_time is a test double or an
+                # unknown job state; do not replace it blindly.
+                if current_run_time is None or current_run_time == exam_date.booking_deadline:
+                    continue
+
+            scheduler_instance.add_job(
+                auto_assign_duties,
+                trigger=DateTrigger(run_date=exam_date.booking_deadline),
+                id=job_id,
+                name=f"Auto assign session {session_id} exam {exam_date.pk}",
+                replace_existing=True,
+                jobstore="default",
+                kwargs={"session_id": session_id, "exam_date_id": exam_date.pk},
+            )
+            logger.info("Synced duty assignment job %s at %s", job_id, exam_date.booking_deadline)
+
+        # Discard jobs for removed exams, inactive sessions, and old deadlines.
+        for job in scheduler_instance.get_jobs():
+            if job.id.startswith("auto_assign_duties_") and job.id not in desired_ids:
+                scheduler_instance.remove_job(job.id)
+                logger.info("Removed obsolete assignment job %s", job.id)

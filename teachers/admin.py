@@ -1,6 +1,7 @@
 import io
 import math
 import random
+import secrets
 import openpyxl
 from django.db import models as db_models
 from django.template.response import TemplateResponse
@@ -242,14 +243,10 @@ class TeacherAdmin(admin.ModelAdmin):
                 if department_name:
                     department, _ = Department.objects.get_or_create(name=department_name)
 
-                # Generate default password from full_name
-                parts = full_name.split()
-                first_name = parts[0]
-                last_name = parts[-1] if len(parts) > 1 else ''
-                if last_name:
-                    password = f"{first_name.lower()}.{last_name.lower()}@123"
-                else:
-                    password = f"{first_name.lower()}@123"
+                # Generate a unique, unpredictable initial password. Never
+                # derive credentials from a teacher's publicly known name.
+                # Existing accounts retain their current password on reimport.
+                password = secrets.token_urlsafe(18)
 
                 parsed.append({
                     'faculty_id': faculty_id,
@@ -448,6 +445,19 @@ class SessionAdmin(admin.ModelAdmin):
         session = Session.objects.get(pk=session_id)
 
         if request.method == 'POST':
+            # Setup recreates slots and recalculates teacher quotas. Once any
+            # bookings exist, re-uploading would cascade-delete those bookings
+            # and overwrite their duty counters. Reject before ANY writes.
+            if Booking.objects.filter(slot__exam_date__session=session).exists():
+                self.message_user(
+                    request,
+                    "Session setup is locked because teachers already have bookings. "
+                    "Preserve existing duties; use a separate reviewed amendment "
+                    "process instead of re-uploading this session.",
+                    level=messages.ERROR,
+                )
+                return redirect(request.path)
+
             excel_file = request.FILES.get('excel_file')
             practical_excel_file = request.FILES.get('practical_excel_file')
             booking_deadline_raw = request.POST.get('booking_deadline')
@@ -592,8 +602,6 @@ class SessionAdmin(admin.ModelAdmin):
             created_dates = 0
             created_slots = 0
 
-            from .scheduler import schedule_auto_assignment
-
             for date, exams in data.items():
                 total_students         = sum(e['total_students']   for e in exams)
                 total_morning_students = sum(e['morning_students'] for e in exams)
@@ -623,8 +631,8 @@ class SessionAdmin(admin.ModelAdmin):
                     exam_date.evening_end      = evening_end
                     exam_date.save()
 
-                # Schedule per-ExamDate auto-assignment
-                schedule_auto_assignment(exam_date.booking_deadline, session.id, exam_date.id)
+                # Dedicated scheduler reconciles this committed ExamDate automatically.
+                # Do not enqueue jobs from the web/admin process.
 
                 exam_date.exams.all().delete()
                 exam_date.slots.all().delete()
@@ -827,8 +835,8 @@ class SessionAdmin(admin.ModelAdmin):
                 session.status = 'active'
                 session.save()
 
-            # ── Schedule auto assignment ──
-            # Scheduled per-ExamDate inside the loop above
+            # ── Auto-assignment scheduling ──
+            # The dedicated run_scheduler service observes the saved exam dates.
 
             # ── Success message ──
             if is_even:
